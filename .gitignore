@@ -94,3 +94,7 @@ logs/
 .terraform/
 *.tfstate
 *.tfstate.backup
+
+# Real raw datasets (downloaded on demand)
+data_real/
+data_raw_ims_zip/

@@ -1,79 +1,102 @@
-# Setup Guide
+# Setup and Installation Guide
 
-> **This file is read by the automated evaluation pipeline. Be precise and complete.**
+This guide provides test-quality instructions to run ReadyLine locally from scratch.
 
-## Prerequisites
+---
 
-Before you begin, ensure you have the following installed:
+## 1. System Prerequisites
 
-- [ ] [e.g., Python 3.11+]
-- [ ] [e.g., Node.js 18+]
-- [ ] [e.g., Docker Desktop]
-- [ ] [e.g., An IBM Cloud account with watsonx.ai access]
+- **Operating System:** Windows 10/11, macOS, or Ubuntu Linux
+- **Python:** Python 3.11, 3.12, or 3.13
+- **Git:** Installed and available on system PATH
+- **Ollama (Optional for live LLM):** For local Granite briefings (download from [ollama.ai](https://ollama.ai))
 
-## Environment Variables
+---
 
-Copy `.env.example` to `.env` and fill in the values:
+## 2. Step-by-Step Installation
 
+### Step 1: Clone the Repository
 ```bash
-cp .env.example .env
+git clone https://github.com/DhairyaPatel11/bob-ai-hackathon-Nakshatra.git
+cd bob-ai-hackathon-Nakshatra
 ```
 
-| Variable | Description | Required |
+### Step 2: Set Up Virtual Environment
+```bash
+python -m venv .venv
+
+# Activate on Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+
+# Activate on Windows (Command Prompt):
+.venv\Scripts\activate.bat
+
+# Activate on Linux/macOS:
+source .venv/bin/activate
+```
+
+### Step 3: Install Required Dependencies
+```bash
+pip install --upgrade pip
+pip install -r src/requirements.txt
+```
+
+### Step 4: Configure Environment Variables
+```bash
+cp src/.env.example src/.env
+```
+*(No edits are required by default. The project is pre-configured for local offline execution.)*
+
+### Step 5: (Optional) Pull Local IBM Granite 3.3 via Ollama
+If you wish to use live neural briefings rather than the built-in mock fallback:
+```bash
+# In a separate terminal:
+ollama run granite3.3:2b
+```
+
+---
+
+## 3. Running the Project
+
+### Immediate Launch (Recommended)
+ReadyLine includes pre-trained models in `src/models/` and pre-processed parquets in `src/output_real/`. You can launch the full dashboard immediately:
+
+```bash
+cd src
+streamlit run app.py
+```
+Open your browser to `http://localhost:8501`.
+
+### Running Verification Tests
+To run an automated test across the combined fleet (100 engines + 4 gearboxes):
+
+```bash
+# Fast-path verification (100% offline, completes in ~5 seconds):
+python src/validate_fast.py
+
+# Full-fidelity validation (including IBM Granite TTM neural forecasting):
+python src/validate_combined.py
+```
+
+---
+
+## 4. How to Verify It's Working
+
+When `streamlit run src/app.py` loads in your browser, verify:
+1. **Fleet Command Strip:** Displays 104 total assessed assets (100 aircraft engines, 4 drivetrain gearboxes).
+2. **Readiness Summary:** Shows 4 mission-ready assets and 100 assets requiring maintenance.
+3. **Maintenance Queue:** Shows a ranked list of grounded assets with modality badges (✈ Engine / ⚙ Gearbox), priority scores, and parts stock pills (`IN STOCK` or `PROCURE`).
+4. **Diagnostic Briefing:** Clicking an asset card displays a concise 2-3 sentence briefing citing sensor values or bearing defect frequencies (BPFO/BPFI).
+5. **Interactive Copilot:** Type *"Which assets are mission critical?"* in the chat box to test the natural language triage assistant.
+
+---
+
+## 5. Troubleshooting Table
+
+| Symptom / Error | Root Cause | Solution |
 |---|---|---|
-| `WATSONX_API_KEY` | Your IBM watsonx.ai API key | Yes |
-| `WATSONX_PROJECT_ID` | Your watsonx.ai project ID | Yes |
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `SLACK_WEBHOOK_URL` | Slack webhook for alerts | No |
-
-## Installation
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/[your-org]/[your-repo].git
-cd [your-repo]
-
-# 2. Install backend dependencies
-[your command — e.g.: pip install -r requirements.txt]
-
-# 3. Install frontend dependencies (if applicable)
-[your command — e.g.: cd frontend && npm install]
-
-# 4. Set up the database (if applicable)
-[your command — e.g.: python manage.py migrate]
-```
-
-## Running the Application
-
-```bash
-# Start the backend
-[your command — e.g.: uvicorn app.main:app --reload]
-
-# Start the frontend (in a separate terminal, if applicable)
-[your command — e.g.: cd frontend && npm run dev]
-```
-
-The application will be available at: `http://localhost:[PORT]`
-
-## Running Tests
-
-```bash
-[your test command — e.g.: pytest tests/ -v]
-```
-
-## Quick Demo (Optional)
-
-If you have a demo script or sample data to showcase the project quickly:
-
-```bash
-[e.g.: python demo/seed_demo_data.py]
-[e.g.: open http://localhost:8000/demo]
-```
-
-## Troubleshooting
-
-| Issue | Solution |
-|---|---|
-| [e.g., `ModuleNotFoundError`] | [e.g., Run `pip install -r requirements.txt` again] |
-| [e.g., Database connection refused] | [e.g., Ensure PostgreSQL is running: `docker compose up db`] |
-| [e.g., watsonx.ai 401 error] | [e.g., Check `WATSONX_API_KEY` in your `.env` file] |
+| `ConnectionRefusedError: [WinError 10061]` on port 11434 | Ollama is not running on localhost. | **Automatic:** ReadyLine's built-in fast-fail cache detects offline Ollama and instantly falls back to deterministic structured briefings with zero delay. To use live LLM, run `ollama serve`. |
+| `KeyError: sensor_N_prediction` or TTM Context Length Error | TTM model revision context size mismatch. | Ensure `forecast.py` uses revision `52-16-ft-l1-r2.1`. Do not use default 512-cycle revisions which exceed asset lifespan. |
+| `WSCPA0000E: watsonx.ai authentication failed` | IBM Cloud trial account provisioning restriction. | ReadyLine is configured to use local IBM Granite via Ollama by default, bypassing cloud auth entirely. |
+| Missing `output_real/` Parquet files | Repository cloned without data artifacts. | Run `python src/etl_cmapss.py` and `python src/etl_ims.py` to regenerate all Parquet tables from raw data. |
+| `ModuleNotFoundError: No module named 'tsfm_public'` | `granite-tsfm` package not installed. | Run `pip install granite-tsfm`. Note: If absent, `forecast.py` gracefully falls back to rolling-window features without crashing. |

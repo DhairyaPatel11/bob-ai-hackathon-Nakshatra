@@ -1,0 +1,14 @@
+streamlit>=1.30.0
+xgboost>=2.0.0
+scikit-learn>=1.4.0
+scipy>=1.12.0
+pandas>=2.1.0
+numpy>=1.26.0
+pyarrow>=14.0.0
+plotly>=5.18.0
+torch>=2.1.0
+transformers>=4.36.0
+granite-tsfm>=0.3.5
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+requests>=2.31.0
