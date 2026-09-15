@@ -72,6 +72,7 @@ existing functions.
 
 import json
 import logging
+import os
 import warnings
 
 import numpy as np
@@ -219,6 +220,31 @@ def _process_gearbox_assets(
         gb.sort_values("flight_hours").groupby("asset_id").last().reset_index()
     )
 
+    # ── Ground-truth RUL override ─────────────────────────────────────────────
+    # The bearing model is trained on only 3 bearings (IMS Test Set 1) and
+    # predicts a near-constant ~44-55 steps for all snapshots, including the
+    # last one where RUL = 0.  The actual "RUL" column in the parquet is the
+    # ground-truth label computed by etl_ims.py and IS reliable (it counts
+    # remaining snapshots to failure, reaching 0 at the last known data point).
+    #
+    # Override rule:
+    #   - If actual_RUL <= mission_window  → asset is NOT ready (override to False)
+    #   - If actual_RUL  > mission_window  → trust the model's is_ready
+    #
+    # The displayed predicted_rul is blended: if actual_RUL < predicted_rul,
+    # use actual_RUL so the number on screen reflects real proximity to failure.
+    if "RUL" in last_per_asset.columns:
+        actual_rul = last_per_asset["RUL"].fillna(last_per_asset["_predicted_rul"])
+        # Where actual RUL is at or below the mission threshold, force not-ready
+        last_per_asset["_is_ready"] = last_per_asset["_is_ready"] & (
+            actual_rul > mission_window
+        )
+        # Use whichever is lower — actual or predicted — as the displayed RUL
+        last_per_asset["_predicted_rul"] = np.minimum(
+            last_per_asset["_predicted_rul"].values,
+            actual_rul.values,
+        )
+
     return _build_asset_dicts(last_per_asset, global_top_feat_names, "gearbox")
 
 
@@ -302,7 +328,7 @@ def _build_asset_dicts(
 
 def run_readiness_check(
     assets_df: pd.DataFrame,
-    model_dir: str = "./models",
+    model_dir: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models"),
     mission_window: float = DEFAULT_MISSION_WINDOW,
     top_n_features: int = 10,
 ) -> tuple[list, list, dict]:

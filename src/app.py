@@ -230,22 +230,31 @@ def load_pipeline_data():
 
     Both frames are tagged with an asset_type column before concatenation
     so pipeline.py can route each row to the correct model.
+
+    Paths are resolved relative to this file so the dashboard works
+    regardless of which directory `streamlit run` is invoked from.
     """
+    # Resolve paths relative to this file's directory, not CWD
+    _here = os.path.dirname(os.path.abspath(__file__))
     dfs = []
 
     # Engine assets (C-MAPSS)
-    engine_path = "./output_real/train_FD001_merged.parquet"
+    engine_path = os.path.join(_here, "output_real", "train_FD001_merged.parquet")
     if os.path.exists(engine_path):
         eng_df = pd.read_parquet(engine_path)
         eng_df["asset_type"] = "engine"
         dfs.append(eng_df)
+    else:
+        st.warning(f"Engine data not found at: {engine_path}")
 
     # Gearbox / bearing assets (IMS)
-    bearing_path = "./output_real/ims_bearing_merged.parquet"
+    bearing_path = os.path.join(_here, "output_real", "ims_bearing_merged.parquet")
     if os.path.exists(bearing_path):
         gb_df = pd.read_parquet(bearing_path)
         gb_df["asset_type"] = "gearbox"
         dfs.append(gb_df)
+    else:
+        st.warning(f"Gearbox data not found at: {bearing_path}")
 
     if not dfs:
         st.error(
@@ -468,22 +477,47 @@ def render_copilot(query: str, all_map: dict, queue: list):
     if not query_clean:
         return
 
-    # Try to extract an asset ID from the query
+    # ── Asset ID extraction ───────────────────────────────────────────────────
+    # Match up to 5 digits so gearbox IDs (1001-1004) are captured.
+    # Also recognise "G-1001", "G1001", "unit 1001", "bearing 1001" prefixes.
     import re
-    numbers = re.findall(r"\b(\d{1,3})\b", query_clean)
     matched_asset = None
-    for n in numbers:
+
+    # First pass: explicit G-prefix (e.g. "G-1001", "G1001")
+    g_hits = re.findall(r"\bg-?(\d{3,5})\b", query_clean)
+    for n in g_hits:
         aid = int(n)
         if aid in all_map:
             matched_asset = all_map[aid]
             break
 
-    # Keyword fallbacks
+    # Second pass: bare number (1-5 digits)
     if matched_asset is None:
-        if any(kw in query_clean for kw in ["worst", "most urgent", "highest priority", "critical first", "top"]):
+        numbers = re.findall(r"\b(\d{1,5})\b", query_clean)
+        for n in numbers:
+            aid = int(n)
+            if aid in all_map:
+                matched_asset = all_map[aid]
+                break
+
+    # ── Keyword fallbacks ─────────────────────────────────────────────────────
+    if matched_asset is None:
+        urgency_kws  = ["worst", "most urgent", "highest priority", "critical first", "top"]
+        ready_kws    = ["ready", "available", "flyable", "go"]
+        gearbox_kws  = ["bearing", "vibration", "gearbox", "bpfo", "bpfi", "bsf", "ftf",
+                         "unit", "gear"]
+
+        if any(kw in query_clean for kw in urgency_kws):
             if queue:
                 matched_asset = {**queue[0], **all_map.get(queue[0]["asset_id"], {})}
-        elif any(kw in query_clean for kw in ["ready", "available", "flyable", "go"]):
+
+        elif any(kw in query_clean for kw in gearbox_kws):
+            # "What gearbox/bearing assets exist?" — pick worst gearbox by RUL
+            gearbox_assets = [a for a in all_map.values() if a.get("asset_type") == "gearbox"]
+            if gearbox_assets:
+                matched_asset = min(gearbox_assets, key=lambda x: x["predicted_rul"])
+
+        elif any(kw in query_clean for kw in ready_kws):
             ready_assets = [a for a in all_map.values() if a["is_ready"]]
             if ready_assets:
                 matched_asset = max(ready_assets, key=lambda x: x["predicted_rul"])
@@ -491,7 +525,9 @@ def render_copilot(query: str, all_map: dict, queue: list):
     if matched_asset is None:
         response_html = (
             "I couldn't find an asset matching that query. Try asking "
-            "<em>\"Is Tail 43 ready?\"</em>, <em>\"What's the highest priority asset?\"</em>, "
+            "<em>\"Is Tail 43 ready?\"</em>, <em>\"Is Unit G-1003 ready?\"</em>, "
+            "<em>\"What's the highest priority asset?\"</em>, "
+            "<em>\"What's the worst bearing?\"</em>, "
             "or <em>\"Show me the most flyable asset.\"</em>"
         )
     else:
@@ -503,6 +539,12 @@ def render_copilot(query: str, all_map: dict, queue: list):
         disc  = matched_asset.get("open_discrepancies", 0)
         stock = matched_asset.get("part_in_stock", True)
         lead  = matched_asset.get("part_lead_time_days", 0)
+        atype = matched_asset.get("asset_type", "engine")
+
+        # Modality-aware labels
+        id_label  = "Unit" if atype == "gearbox" else "Tail"
+        rul_unit  = "steps" if atype == "gearbox" else "cycles"
+        aid_fmt   = f"G-{aid}" if atype == "gearbox" else f"{aid:03d}"
 
         verdict = (
             "<span style='color:#4ade80;font-weight:700'>MISSION READY (GO)</span>"
@@ -526,9 +568,9 @@ def render_copilot(query: str, all_map: dict, queue: list):
         )
 
         response_html = (
-            f"<strong>Tail {aid:03d}</strong> is {verdict}.{crit_note}{parts_note}{rank_note}"
+            f"<strong>{id_label} {aid_fmt}</strong> is {verdict}.{crit_note}{parts_note}{rank_note}"
             f"<br><br>{brief}"
-            f"<br><br><span style='color:#4b5563;font-size:0.8rem'>Predicted RUL: {rul:.1f} cycles &nbsp;·&nbsp; "
+            f"<br><br><span style='color:#4b5563;font-size:0.8rem'>Predicted RUL: {rul:.1f} {rul_unit} &nbsp;·&nbsp; "
             f"Open discrepancies: {disc}</span>"
         )
 
@@ -592,9 +634,12 @@ def main():
     )
 
     # Controls
-    filter_col, sort_col, _ = st.columns([2, 2, 4])
+    filter_col, type_col, sort_col, _ = st.columns([2, 2, 2, 2])
     with filter_col:
         show_crit_only = st.checkbox("Mission-critical only", value=False)
+    with type_col:
+        asset_type_options = ["All types", "Engine only", "Gearbox only"]
+        asset_type_filter = st.selectbox("Asset type", asset_type_options, index=0)
     with sort_col:
         show_top_n = st.selectbox("Show top", [5, 10, 20, 50, len(queue)],
                                   format_func=lambda x: f"Top {x}" if x != len(queue) else "All",
@@ -602,7 +647,11 @@ def main():
 
     filtered_queue = queue
     if show_crit_only:
-        filtered_queue = [q for q in queue if q.get("mission_critical_flag")]
+        filtered_queue = [q for q in filtered_queue if q.get("mission_critical_flag")]
+    if asset_type_filter == "Engine only":
+        filtered_queue = [q for q in filtered_queue if q.get("asset_type", "engine") == "engine"]
+    elif asset_type_filter == "Gearbox only":
+        filtered_queue = [q for q in filtered_queue if q.get("asset_type") == "gearbox"]
 
     displayed = filtered_queue[:show_top_n]
 
@@ -621,17 +670,34 @@ def main():
         [a for a in assets if a["is_ready"]],
         key=lambda x: -x["predicted_rul"],
     )
+    ready_engines   = [a for a in ready_assets if a.get("asset_type", "engine") == "engine"]
+    ready_gearboxes = [a for a in ready_assets if a.get("asset_type") == "gearbox"]
     st.markdown(
-        f"<h3 style='margin-bottom:8px'>Mission-Ready Fleet &nbsp;"
+        f"<h3 style='margin-bottom:4px'>Mission-Ready Fleet &nbsp;"
         f"<span style='color:#4ade80;font-size:1rem;font-weight:400'>"
-        f"{len(ready_assets)} assets cleared for tasking</span></h3>",
+        f"{len(ready_assets)} assets cleared for tasking</span></h3>"
+        f"<div class='caption'>✈ {len(ready_engines)} engines &nbsp;·&nbsp; "
+        f"⚙ {len(ready_gearboxes)} gearboxes</div>",
         unsafe_allow_html=True,
     )
-    if ready_assets:
-        for a in ready_assets:
+    # Asset-type filter for the ready fleet
+    ready_filter = st.radio(
+        "Show", ["All", "Engines", "Gearboxes"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    if ready_filter == "Engines":
+        display_ready = ready_engines
+    elif ready_filter == "Gearboxes":
+        display_ready = ready_gearboxes
+    else:
+        display_ready = ready_assets
+
+    if display_ready:
+        for a in display_ready:
             render_ready_asset_row(a)
     else:
-        st.warning("No mission-ready assets in the current assessment window.")
+        st.warning("No mission-ready assets match the current filter.")
 
     # ── Fleet RUL Distribution ────────────────────────────────────────────────
     st.markdown("<hr>", unsafe_allow_html=True)
@@ -640,16 +706,22 @@ def main():
 
     ruls   = [a["predicted_rul"] for a in assets]
     colors = [_rul_color(r) for r in ruls]
-    aids   = [f"T{a['asset_id']:03d}" for a in assets]
+    aids   = [
+        ("G" if a["asset_type"] == "gearbox" else "T") + f"{a['asset_id']:04d}"
+        for a in assets
+    ]
+    # Per-asset hover unit so engine=cycles, gearbox=steps
+    units  = ["steps" if a["asset_type"] == "gearbox" else "cycles" for a in assets]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=aids, y=ruls,
         marker_color=colors,
-        hovertemplate="Tail %{x}<br>RUL: %{y:.1f} cycles<extra></extra>",
+        customdata=units,
+        hovertemplate="%{x}<br>RUL: %{y:.1f} %{customdata}<extra></extra>",
     ))
     fig.add_hline(y=20, line_dash="dash", line_color="#6b7280",
-                  annotation_text="Mission threshold (20 cycles)",
+                  annotation_text="Mission threshold (20 cycles / steps)",
                   annotation_font_color="#6b7280",
                   annotation_position="bottom right")
     fig.update_layout(
