@@ -12,10 +12,15 @@ team:
   name: "Nakshatra"                                    # REQUIRED — e.g., "Orion Squad"
   track: "AI"                                          # REQUIRED — one of: AI | DevOps | Sustainability | Open
   lead:
-    name: "Dhairya Patel"                              # REQUIRED — e.g., "Alice Chen"
-    email: "24ec096@charusat.edu.in"                   # REQUIRED — e.g., "alice.chen@ibm.com"
-  members: []                                          # Add teammates here if applicable: copy name and email above
-
+    name: "Netra Pahilwani"                              # REQUIRED — e.g., "Alice Chen"
+    email: "23bph033charusat.edu.in"                   # REQUIRED — e.g., "alice.chen@ibm.com"
+  members:
+    -name: "Dhairya Patel" # Add teammates here if applicable: copy name and email abo
+    email: "24ec096@charusat.edu.in"
+    -name: "Nandini Shah"
+    email: "23bph090@charusat.edu.in"
+    -name: "Rudra Shah"
+    email: "23bph093@charusat.edu.in"
 submission:
   title: "ReadyLine — Mission Readiness & Predictive Maintenance Copilot" # REQUIRED
 
