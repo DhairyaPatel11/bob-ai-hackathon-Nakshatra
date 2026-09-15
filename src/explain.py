@@ -19,6 +19,7 @@ Import API:
     )
 """
 
+import os
 import textwrap
 
 
@@ -29,16 +30,17 @@ import textwrap
 # --- Ollama local backend (active) -----------------------------------------
 # Ollama serves an OpenAI-compatible endpoint at localhost:11434.
 # Pull the model once with:  ollama pull granite3.3:2b
-OLLAMA_URL        = "http://localhost:11434/v1/chat/completions"
-OLLAMA_MODEL      = "granite3.3:2b"
+OLLAMA_URL        = os.environ.get("OLLAMA_URL", "http://localhost:11434/v1/chat/completions")
+OLLAMA_MODEL      = os.environ.get("OLLAMA_MODEL", "granite3.3:2b")
 
 # --- IBM watsonx.ai cloud backend (fill in and swap call_watsonx to use) ----
+# Set WATSONX_API_KEY and WATSONX_PROJECT_ID via environment variables or .env.
 # NOTE: WATSONX_PROJECT_ID must be a UUID like "a1b2c3d4-..." from the
 #       watsonx.ai project URL -- NOT an API key string.
-WATSONX_API_KEY    = "ApiKey-9a898b73-4a94-44d5-9c81-22b46f6c5c9b"
-WATSONX_PROJECT_ID = "97c80bdb-2652-4bf9-89c4-04cb666eaa99" 
-WATSONX_URL        = "https://us-south.ml.cloud.ibm.com"
-WATSONX_MODEL_ID   = "ibm/granite-3-8b-instruct"
+WATSONX_API_KEY    = os.environ.get("WATSONX_API_KEY", "")
+WATSONX_PROJECT_ID = os.environ.get("WATSONX_PROJECT_ID", "")
+WATSONX_URL        = os.environ.get("WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
+WATSONX_MODEL_ID   = os.environ.get("WATSONX_MODEL_ID", "ibm/granite-3-8b-instruct")
 
 
 # ---------------------------------------------------------------------------
